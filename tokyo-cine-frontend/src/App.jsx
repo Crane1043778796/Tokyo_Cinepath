@@ -5,7 +5,7 @@ import {
   Ticket, Calendar, Heart, Eye, Clock, CheckCircle2, 
   ChevronRight, ChevronDown, AlertCircle, LogOut, Settings, Info, Check, ArrowRight, ExternalLink, ArrowUp 
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import MapGL, { Marker, NavigationControl } from 'react-map-gl'; 
 import 'mapbox-gl/dist/mapbox-gl.css';
 
@@ -606,6 +606,7 @@ function CinemaView({ selectedCinema, onSelectCinema, cinemaDate, setCinemaDate,
   const [viewport, setViewport] = useState({ latitude: 35.6895, longitude: 139.6917, zoom: 12, pitch: 45 });
   const [sheetState, setSheetState] = useState('peek');
   const isMobile = window.innerWidth < 768;
+  const dragControls = useDragControls();
 
   const sheetVariants = {
     peek: { y: isMobile ? '75vh' : '0' },
@@ -613,7 +614,7 @@ function CinemaView({ selectedCinema, onSelectCinema, cinemaDate, setCinemaDate,
   };
 
   return (
-    <div className="relative w-full h-full overflow-hidden flex flex-col md:flex-row bg-[#0a0a0b]">
+    <div className="relative w-full h-full overflow-hidden flex flex-col md:flex-row bg-[#050816] md:bg-[#F5F5F2]">
       {/* 1. Map 容器：确保 100% 高度显示 */}
       <div className="absolute inset-0 md:relative md:flex-[1.5] bg-[#0a0a0b] md:rounded-[3.5rem] md:m-6 overflow-hidden border border-white/5 shadow-inner z-0">
         <MapGL {...viewport} onMove={evt => setViewport(evt.viewState)} mapStyle="mapbox://styles/mapbox/navigation-night-v1" mapboxAccessToken={MAPBOX_TOKEN} antialias={true} style={{ width: '100%', height: '100%' }}>
@@ -649,13 +650,19 @@ function CinemaView({ selectedCinema, onSelectCinema, cinemaDate, setCinemaDate,
 
       {/* 2. 详情抽屉 (Bottom Sheet) */}
       <motion.div 
-        drag={isMobile ? "y" : false} dragConstraints={{ top: 0, bottom: 800 }}
+        drag={isMobile ? "y" : false}
+        dragControls={isMobile ? dragControls : undefined}
+        dragListener={false}
+        dragConstraints={{ top: 0, bottom: 800 }}
         onDragEnd={(e, info) => { if (info.offset.y < -50) setSheetState('full'); if (info.offset.y > 50) setSheetState('peek'); }}
         variants={sheetVariants} initial="peek" animate={selectedCinema ? (isMobile ? sheetState : 'peek') : 'peek'} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
         className={`fixed bottom-0 left-0 right-0 md:relative md:bottom-auto md:translate-y-0 md:w-[550px] bg-white rounded-t-[3rem] md:rounded-[3.5rem] shadow-2xl border border-zinc-100 z-[70] h-[95vh] md:h-full md:my-6 md:mr-6 flex flex-col transition-all duration-300`}
       >
-        <div className="md:hidden w-12 h-1.5 bg-zinc-200 rounded-full mx-auto mt-4 mb-6 shrink-0 cursor-grab active:cursor-grabbing" />
-        <div className="flex-1 overflow-y-auto no-scrollbar px-8 md:px-12 pb-32 pt-4">
+        <div
+          className="md:hidden w-12 h-1.5 bg-zinc-200 rounded-full mx-auto mt-4 mb-6 shrink-0 cursor-grab active:cursor-grabbing"
+          onPointerDown={(e) => dragControls.start(e)}
+        />
+        <div className="flex-1 overflow-y-auto overscroll-contain no-scrollbar px-8 md:px-12 pb-48 pt-4">
           <AnimatePresence mode="wait">
             {selectedCinema ? (
               <motion.div key="cin_detail" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-10 pt-4">
@@ -676,7 +683,7 @@ function CinemaView({ selectedCinema, onSelectCinema, cinemaDate, setCinemaDate,
                           if (selectedCinema?.id) {
                             try {
                               const { data: full } = await fetchWithCacheAndRetry(`/api/cinemas/${selectedCinema.id}?date=${newDate}`);
-                              setSelectedCinema(full);
+                              onSelectCinema(full);
                             } catch (err) {
                               console.error('加载影院详情失败', err);
                             }
@@ -718,7 +725,7 @@ function CinemaView({ selectedCinema, onSelectCinema, cinemaDate, setCinemaDate,
                         setViewport({ ...viewport, latitude: c.lat, longitude: c.lng, zoom: 14 });
                         try {
                           const { data: full } = await fetchWithCacheAndRetry(`/api/cinemas/${c.id}?date=${cinemaDate}`);
-                          setSelectedCinema(full);
+                          onSelectCinema(full);
                         } catch (e) {
                           console.error('加载影院详情失败', e);
                         }

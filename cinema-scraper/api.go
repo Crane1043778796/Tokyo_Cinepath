@@ -431,6 +431,18 @@ func buildDailyMoviesForCinema(cinemaID uint, targetDate time.Time) []DailyMovie
 			continue
 		}
 		if _, exists := dailyMap[mv.ID]; !exists {
+			// 标题兜底：CN -> EN -> JP -> "Movie #ID"
+			title := strings.TrimSpace(mv.TitleCN)
+			if title == "" {
+				title = strings.TrimSpace(mv.TitleEN)
+			}
+			if title == "" {
+				title = strings.TrimSpace(mv.TitleJP)
+			}
+			if title == "" {
+				title = fmt.Sprintf("Movie #%d", mv.ID)
+			}
+
 			// 评分优先级：豆瓣 > IMDb > TMDB
 			rating := mv.DoubanRating
 			if rating == 0 {
@@ -441,7 +453,7 @@ func buildDailyMoviesForCinema(cinemaID uint, targetDate time.Time) []DailyMovie
 			}
 			dailyMap[mv.ID] = &DailyMovie{
 				ID:     mv.ID,
-				Title:  mv.TitleCN,
+				Title:  title,
 				Rating: fmt.Sprintf("%.1f", rating),
 				Times:  []string{},
 			}
