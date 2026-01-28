@@ -1,0 +1,32 @@
+export const MOCK_MOVIES = [
+  {
+    id: 1,
+    title_cn: "狩猎",
+    title_en: "The Hunt",
+    director: "托马斯·温特伯格",
+    year: "2012",
+    rating: 8.3,
+    poster: "https://image.tmdb.org/t/p/w500/6vAof6m120fS1r1vjWpX7h4NstG.jpg",
+    backdrop: "https://image.tmdb.org/t/p/original/u67YmD8Xf5SltqE1v5pY3LUpk0O.jpg",
+    cinema: "シモキタ-エキマエ-シネマ K2",
+    status: "incoming",
+    date: "JAN 22",
+    runtime: "1h 55m",
+    synopsis: "一个谎言如何像瘟疫一样散播，最终摧毁一个男人的尊严与生活。托马斯·温特伯格的杰作，马德斯·米科尔森巅峰演技。",
+  },
+  {
+    id: 2,
+    title_cn: "三傻大闹宝莱坞",
+    title_en: "3 Idiots",
+    year: "2009",
+    director: "拉库马·希拉尼",
+    rating: 8.4,
+    poster: "https://image.tmdb.org/t/p/w500/66997pTe99Xv9T68Vf0nWOCfMv8.jpg",
+    backdrop: "https://image.tmdb.org/t/p/original/u67YmD8Xf5SltqE1v5pY3LUpk0O.jpg",
+    cinema: "シネ・リーブル池袋",
+    status: "incoming",
+    date: "JAN 24",
+    runtime: "2h 50m",
+    synopsis: "印度影史奇迹，关于教育、梦想与友情的深度探讨。兰彻用他的智慧告诉我们：追求卓越，成功自然会尾随而至。",
+  }
+];
