@@ -264,8 +264,24 @@ func listMoviesHandler(c *gin.Context) {
 		return
 	}
 
-	items := make([]MovieItem, 0, len(movies))
+	// 对于 showing 状态的电影，额外过滤：必须至少有一个今天或未来的排片
+	today := time.Now().Format("2006-01-02")
+	filteredMovies := make([]Movie, 0, len(movies))
 	for _, m := range movies {
+		if status == "showing" {
+			// 检查是否有今天或未来的排片
+			var futureScheduleCount int64
+			db.Model(&Schedule{}).Where("movie_id = ? AND date(play_date) >= ?", m.ID, today).Count(&futureScheduleCount)
+			if futureScheduleCount == 0 {
+				// 没有今天或未来的排片，跳过（可能是状态未及时更新）
+				continue
+			}
+		}
+		filteredMovies = append(filteredMovies, m)
+	}
+
+	items := make([]MovieItem, 0, len(filteredMovies))
+	for _, m := range filteredMovies {
 		item := mapMovieToItem(m)
 		
 		// 统计该影片参与放映的影院数量 + 最早排片日期
@@ -457,9 +473,12 @@ func buildDailyMoviesForCinema(cinemaID uint, dateStr string) []DailyMovie {
 }
 
 // buildCinemasForMovie 将某部影片的 Schedule + Cinema 聚合成前端 DetailView 需要的结构。
+// 只返回今天及未来的排片（已过期的排片不显示）。
 func buildCinemasForMovie(movieID uint) []MovieCinemaSchedule {
+	today := time.Now().Format("2006-01-02")
 	var schedules []Schedule
-	if err := db.Where("movie_id = ?", movieID).Find(&schedules).Error; err != nil {
+	// 只查询今天及未来的排片
+	if err := db.Where("movie_id = ? AND date(play_date) >= ?", movieID, today).Find(&schedules).Error; err != nil {
 		return []MovieCinemaSchedule{}
 	}
 	if len(schedules) == 0 {

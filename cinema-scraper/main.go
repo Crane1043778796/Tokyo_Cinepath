@@ -761,12 +761,22 @@ func updateMovieStatusFromSchedules() error {
 		}
 
 		if len(schedules) == 0 {
-			// 没有排片，保持原状态或设置为 showing
+			// 没有任何排片：视为「未排片」，单独标记，前端默认不展示
+			newStatus := "unplanned"
+			if movie.Status != newStatus {
+				if err := db.Model(&movie).Update("status", newStatus).Error; err != nil {
+					fmt.Printf("⚠️ 更新电影状态失败 [%s]: %v\n", movie.TitleJP, err)
+					continue
+				}
+				fmt.Printf("   🔄 [%s]: %s -> %s (无任何排片)\n", movie.TitleJP, movie.Status, newStatus)
+				updatedCount++
+			}
 			continue
 		}
 
-		// 找到最早的排片日期
+		// 找到最早的排片日期 + 最晚的排片日期 + 是否存在「今天或之前」的排片
 		var earliestDate *time.Time
+		var latestDate *time.Time
 		hasPastOrToday := false
 
 		for _, sched := range schedules {
@@ -777,29 +787,48 @@ func updateMovieStatusFromSchedules() error {
 			if earliestDate == nil || sched.PlayDate.Before(*earliestDate) {
 				earliestDate = &sched.PlayDate
 			}
+			if latestDate == nil || sched.PlayDate.After(*latestDate) {
+				latestDate = &sched.PlayDate
+			}
 		}
 
-		// 判断新状态
-		// 逻辑：
-		// - 如果有今天或过去的排片 → showing
-		// - 如果所有排片都在未来：
-		//   * 最早排片在明天到未来7天内 → incoming（Soon：今天还没上映，明天开始一周内有排片）
-		//   * 最早排片在7天之后 → showing（更远的未来，暂时不算 Soon）
+		// 先检查：如果所有排片都已经过期（最晚排片 < 今天），标记为 unplanned
+		if latestDate != nil {
+			latestDateStr := latestDate.Format("2006-01-02")
+			if latestDateStr < todayStr {
+				// 所有排片都已经过去，标记为 unplanned
+				newStatus := "unplanned"
+				if movie.Status != newStatus {
+					if err := db.Model(&movie).Update("status", newStatus).Error; err != nil {
+						fmt.Printf("⚠️ 更新电影状态失败 [%s]: %v\n", movie.TitleJP, err)
+						continue
+					}
+					fmt.Printf("   🔄 [%s]: %s -> %s (最晚排片: %s，已全部过期)\n", movie.TitleJP, movie.Status, newStatus, latestDateStr)
+					updatedCount++
+				}
+				continue
+			}
+		}
+
+		// 判断新状态（按你的期望精确收敛）：
+		// - showing：存在「今天或之前」的任意排片，且最晚排片 >= 今天（至少还有未过期的场次）
+		// - incoming (Soon)：所有排片都在未来，且最早排片在明天到未来 7 天内
+		// - future：所有排片都在未来，且最早排片在 7 天之后 —— 大概率是数据问题，前端默认不展示
 		newStatus := "showing"
 		if !hasPastOrToday && earliestDate != nil {
-			// 所有排片都在未来
 			tomorrow := today.AddDate(0, 0, 1)
-			tomorrowStr := tomorrow.Format("2006-01-02")
 			sevenDaysLater := today.AddDate(0, 0, 7)
-			earliestDateStr := earliestDate.Format("2006-01-02")
-			
-			// Soon 的定义：今天还没上映，最早排片在明天到未来7天内
-			if earliestDateStr >= tomorrowStr {
-				if earliestDate.Before(sevenDaysLater) || earliestDate.Equal(sevenDaysLater) {
-					// 最早排片在未来7天内 → incoming（Soon）
-					newStatus = "incoming"
-				}
-				// 否则：最早排片在7天之后 → showing（更远的未来）
+
+			earliest := earliestDate.Truncate(24 * time.Hour)
+			if earliest.Before(tomorrow) {
+				// 理论上不会进入（因为没有 pastOrToday），防御性留空
+				newStatus = "incoming"
+			} else if (earliest.Equal(tomorrow) || earliest.After(tomorrow)) && (earliest.Before(sevenDaysLater) || earliest.Equal(sevenDaysLater)) {
+				// 明天 ~ 7 天内
+				newStatus = "incoming"
+			} else if earliest.After(sevenDaysLater) {
+				// 超过 7 天的未来排片：标为 future（第三状态），前端可选择不展示
+				newStatus = "future"
 			}
 		}
 

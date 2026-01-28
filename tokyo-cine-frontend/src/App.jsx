@@ -234,6 +234,8 @@ export default function App() {
   const [movies, setMovies] = useState([]);
   const [moviesLoading, setMoviesLoading] = useState(false);
   const [moviesError, setMoviesError] = useState(null);
+  const [showingCount, setShowingCount] = useState(0);
+  const [incomingCount, setIncomingCount] = useState(0);
 
   /* --- 3.1 影院数据加载模块（来源：Go 后端 /api/cinemas） --- */
   const [cinemasState, setCinemasState] = useState([]);
@@ -317,6 +319,39 @@ export default function App() {
     }
     fetchMovies();
   }, [tab, filterDate, sortKey, debouncedSearchTerm]);
+
+  // 统计 Now/Soon 的电影数量（用于在 header 显示）
+  useEffect(() => {
+    async function fetchCounts() {
+      try {
+        // 同时请求两个状态的数量（不传 search，只统计总数）
+        const [showingRes, incomingRes] = await Promise.all([
+          fetchWithCacheAndRetry('/api/movies?status=showing'),
+          fetchWithCacheAndRetry('/api/movies?status=incoming'),
+        ]);
+        const showingItems = showingRes.data?.items || [];
+        const incomingItems = incomingRes.data?.items || [];
+        setShowingCount(showingItems.length);
+        setIncomingCount(incomingItems.length);
+        // 调试：如果数量为0，打印日志
+        if (process.env.NODE_ENV === 'development') {
+          console.log('📊 电影数量统计:', { showing: showingItems.length, incoming: incomingItems.length });
+        }
+      } catch (err) {
+        console.error('加载电影数量失败', err);
+        // 如果API失败，至少用当前已加载的数据作为兜底
+        if (tab === 'showing') {
+          setShowingCount(displayedMovies.length);
+        } else {
+          setIncomingCount(displayedMovies.length);
+        }
+      }
+    }
+    // 只在 browse 视图时统计（搜索词变化时也会更新）
+    if (view === 'browse') {
+      fetchCounts();
+    }
+  }, [view, debouncedSearchTerm]);
 
   // 从后端 API 加载影院列表，用于地图 Marker 与影院列表视图。
   useEffect(() => {
@@ -432,7 +467,7 @@ export default function App() {
               </div>
               <div className="flex space-x-6 md:space-x-12 items-baseline leading-none flex-wrap">
                 {view === 'browse' ? (
-                  <div className="flex space-x-6 md:space-x-10">
+                  <div className="flex space-x-6 md:space-x-10 items-baseline">
                     <button onClick={() => setTab('showing')} className={`text-4xl sm:text-6xl md:text-8xl font-black transition-all ${tab === 'showing' ? 'text-[#1A2F2B]' : 'text-zinc-200 hover:text-zinc-300'}`}>Now.</button>
                     <button onClick={() => setTab('incoming')} className={`text-4xl sm:text-6xl md:text-8xl font-black transition-all ${tab === 'incoming' ? 'text-[#1A2F2B]' : 'text-zinc-200 hover:text-zinc-300'}`}>Soon.</button>
                   </div>
@@ -443,18 +478,20 @@ export default function App() {
                 )}
               </div>
             </div>
-            <div className="flex items-center space-x-4 bg-white border border-zinc-200 rounded-full px-5 md:px-6 py-2.5 md:py-3 shadow-sm w-full md:w-80 shrink-0">
-              <SearchIcon size={18} className={`text-zinc-400 ${view === 'browse' && searchTerm !== debouncedSearchTerm ? 'animate-pulse' : ''}`} />
-              <input
-                type="text"
-                placeholder={view === 'cinemas' ? 'Search theaters…' : 'Search curated...'}
-                className="bg-transparent border-none outline-none text-sm font-bold w-full text-[#1A2F2B]"
-                value={view === 'cinemas' ? cinemaSearch : searchTerm}
-                onChange={(e) => (view === 'cinemas' ? setCinemaSearch(e.target.value) : setSearchTerm(e.target.value))}
-              />
-              {view === 'browse' && searchTerm !== debouncedSearchTerm && (
-                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="w-4 h-4 border-2 border-[#C5A059] border-t-transparent rounded-full" />
-              )}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center space-x-4 bg-white border border-zinc-200 rounded-full px-5 md:px-6 py-2.5 md:py-3 shadow-sm w-full md:w-80 shrink-0">
+                <SearchIcon size={18} className={`text-zinc-400 ${view === 'browse' && searchTerm !== debouncedSearchTerm ? 'animate-pulse' : ''}`} />
+                <input
+                  type="text"
+                  placeholder={view === 'cinemas' ? 'Search theaters…' : 'Search curated...'}
+                  className="bg-transparent border-none outline-none text-sm font-bold w-full text-[#1A2F2B]"
+                  value={view === 'cinemas' ? cinemaSearch : searchTerm}
+                  onChange={(e) => (view === 'cinemas' ? setCinemaSearch(e.target.value) : setSearchTerm(e.target.value))}
+                />
+                {view === 'browse' && searchTerm !== debouncedSearchTerm && (
+                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="w-4 h-4 border-2 border-[#C5A059] border-t-transparent rounded-full" />
+                )}
+              </div>
             </div>
           </div>
         </header>
@@ -476,14 +513,14 @@ export default function App() {
 
         {/* 7. 工具栏：排序与 Soon 模式日期筛选 */}
         {view === 'browse' && (
-          <div className="px-8 md:px-20 py-8 flex flex-wrap items-center gap-8">
+          <div className="px-8 md:px-20 py-8 flex items-center justify-between gap-6 flex-nowrap">
             {tab === 'showing' ? (
-              <div className="flex p-1 bg-white rounded-full border border-zinc-200 shadow-sm">
+              <div className="flex p-1 bg-white rounded-full border border-zinc-200 shadow-sm shrink-0">
                 <SortBtn active={sortKey === 'imdb_rating'} label="BY IMDB" onClick={() => setSortKey('imdb_rating')} />
                 <SortBtn active={sortKey === 'douban_rating'} label="BY DOUBAN" onClick={() => setSortKey('douban_rating')} />
               </div>
             ) : (
-              <div className="relative date-picker-container">
+              <div className="relative date-picker-container shrink-0">
                 <button onClick={() => setIsPickerOpen(!isPickerOpen)} className="flex items-center space-x-3 px-5 py-2.5 bg-white rounded-full border border-zinc-200 shadow-sm transition-all active:scale-95 hover:border-[#1A2F2B]">
                   <Calendar size={14} className="text-[#1A2F2B]" />
                   <div className="flex flex-col items-start">
@@ -525,6 +562,15 @@ export default function App() {
                 </AnimatePresence>
               </div>
             )}
+            {/* 电影数量统计（放在右侧） */}
+            <div className="flex items-center gap-2 text-sm font-black shrink-0">
+              <span className="text-zinc-400 uppercase tracking-widest">
+                {tab === 'showing' ? 'NOW' : 'SOON'}
+              </span>
+              <span className="text-[#1A2F2B] text-lg">
+                {debouncedSearchTerm ? displayedMovies.length : (tab === 'showing' ? (showingCount > 0 ? showingCount : displayedMovies.length) : (incomingCount > 0 ? incomingCount : displayedMovies.length))}
+              </span>
+            </div>
           </div>
         )}
 
