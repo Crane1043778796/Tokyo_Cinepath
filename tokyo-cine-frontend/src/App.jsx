@@ -535,7 +535,7 @@ export default function App() {
             ) : (
               <motion.div key="browse" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                 {moviesLoading ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-12">
+                  <div className="grid grid-cols-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6 lg:gap-12">
                     {[...Array(8)].map((_, i) => (
                       <MovieCardSkeleton key={i} />
                     ))}
@@ -560,7 +560,7 @@ export default function App() {
                     )}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-12">
+                  <div className="grid grid-cols-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6 lg:gap-12">
                     {displayedMovies.map(movie => <MovieCard key={movie.id} movie={movie} tab={tab} sortKey={sortKey} isFav={watchlist.includes(movie.id)} isWatched={!!history[movie.id]} onClick={() => handleOpenMovie(movie)} />)}
                   </div>
                 )}
@@ -848,7 +848,7 @@ function ArchivePageView({ history, watchlist, movies, onSelect, archiveTab, set
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="max-w-5xl space-y-10 pb-20">
       <div className="bg-[#1A2F2B] p-10 rounded-[3rem] text-white flex items-center justify-between shadow-2xl relative overflow-hidden font-sans font-sans"><div className="flex items-center space-x-8 z-10 font-sans"><div className="w-20 h-20 rounded-full bg-[#F5F5F2] flex items-center justify-center text-3xl font-black text-[#1A2F2B]">JL</div><div><h2 className="text-3xl font-black tracking-tight uppercase italic leading-none mb-1">jiajian liang</h2><p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-1 tracking-widest leading-none font-sans uppercase">Cinephile Elite</p></div></div><LogOut className="text-white/20 hover:text-white transition-colors cursor-pointer z-10" /></div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6"><StatCard active={archiveTab === 'watchlist'} onClick={() => setArchiveTab('watchlist')} icon={<Heart fill={archiveTab === 'watchlist' ? "#C5A059" : "none"} className={archiveTab === 'watchlist' ? "text-[#C5A059]" : "text-zinc-500"}/>} label="想看" count={watchlist.length} sub="WATCHLIST" color="text-[#C5A059]" /><StatCard active={archiveTab === 'history'} onClick={() => setArchiveTab('history')} icon={<Eye fill={archiveTab === 'history' ? "#10b981" : "none"} className={archiveTab === 'history' ? "text-[#10b981]" : "text-zinc-500"}/>} label="已看" count={Object.keys(history).length} sub="HISTORY" color="text-[#10b981]" /></div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-12 pt-10 border-t border-zinc-200">{movies.map(movie => <MovieCard key={movie.id} movie={movie} isFav={watchlist.includes(movie.id)} isWatched={!!history[movie.id]} onClick={() => onSelect(movie)} />)}</div>
+      <div className="grid grid-cols-3 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6 lg:gap-12 pt-10 border-t border-zinc-200">{movies.map(movie => <MovieCard key={movie.id} movie={movie} isFav={watchlist.includes(movie.id)} isWatched={!!history[movie.id]} onClick={() => onSelect(movie)} />)}</div>
     </motion.div>
   );
 }
