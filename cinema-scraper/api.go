@@ -149,23 +149,17 @@ func getCinemaHandler(c *gin.Context) {
 		return
 	}
 
-	// 解析可选的 date 参数，默认使用今天
+	// 解析可选的 date 参数（YYYY-MM-DD）。不传则默认使用服务器当前日期。
+	// 这里直接用 date 字符串做 SQL 的 date(play_date)=? 过滤，避免时区导致“明明有排片但查不到”的问题。
 	dateStr := c.Query("date")
-	var targetDate time.Time
-	if dateStr != "" {
-		if parsed, err := time.Parse("2006-01-02", dateStr); err == nil {
-			targetDate = parsed
-		} else {
-			targetDate = time.Now()
-		}
-	} else {
-		targetDate = time.Now()
+	if dateStr == "" {
+		dateStr = time.Now().Format("2006-01-02")
 	}
 
 	// 查询该影院相关的所有排片，并聚合为 DailyMovies 结构。
 	detail := CinemaDetail{
 		CinemaItem:  mapCinemaToItem(cinema),
-		DailyMovies: buildDailyMoviesForCinema(cinema.ID, targetDate),
+		DailyMovies: buildDailyMoviesForCinema(cinema.ID, dateStr),
 	}
 
 	c.JSON(http.StatusOK, detail)
@@ -384,9 +378,10 @@ func extractDistrict(address string) string {
 
 // buildDailyMoviesForCinema 将某个影院的 Schedule + Movie 聚合成前端需要的 DailyMovie 列表。
 // targetDate：要展示的日期（从 getCinemaHandler 的 query 参数传入，默认今天）。
-func buildDailyMoviesForCinema(cinemaID uint, targetDate time.Time) []DailyMovie {
+func buildDailyMoviesForCinema(cinemaID uint, dateStr string) []DailyMovie {
 	var schedules []Schedule
-	if err := db.Where("cinema_id = ?", cinemaID).Find(&schedules).Error; err != nil {
+	// 直接在 SQL 层用 date(play_date) 过滤，避免 time.Location 不一致导致的日期偏移
+	if err := db.Where("cinema_id = ? AND date(play_date) = ?", cinemaID, dateStr).Find(&schedules).Error; err != nil {
 		return []DailyMovie{}
 	}
 	if len(schedules) == 0 {
@@ -396,10 +391,6 @@ func buildDailyMoviesForCinema(cinemaID uint, targetDate time.Time) []DailyMovie
 	// 加载涉及到的影片信息。
 	movieIDs := make(map[uint]struct{})
 	for _, s := range schedules {
-		// 只保留匹配日期的排片
-		if s.PlayDate.Format("2006-01-02") != targetDate.Format("2006-01-02") {
-			continue
-		}
 		movieIDs[s.MovieID] = struct{}{}
 	}
 	if len(movieIDs) == 0 {
@@ -423,9 +414,6 @@ func buildDailyMoviesForCinema(cinemaID uint, targetDate time.Time) []DailyMovie
 	// 聚合同一影片的多个时间场次。
 	dailyMap := make(map[uint]*DailyMovie)
 	for _, s := range schedules {
-		if s.PlayDate.Format("2006-01-02") != targetDate.Format("2006-01-02") {
-			continue
-		}
 		mv, ok := movieMap[s.MovieID]
 		if !ok {
 			continue

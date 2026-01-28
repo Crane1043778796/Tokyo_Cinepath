@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 /* --- 1. 库与图标导入 --- */
 import { 
   Film, MapPin, User, Star, X, Play, Compass, Search as SearchIcon, 
   Ticket, Calendar, Heart, Eye, Clock, CheckCircle2, 
   ChevronRight, ChevronDown, AlertCircle, LogOut, Settings, Info, Check, ArrowRight, ExternalLink, ArrowUp 
 } from 'lucide-react';
-import { motion, AnimatePresence, useDragControls } from 'framer-motion';
+import { motion, AnimatePresence, animate, useDragControls, useMotionValue } from 'framer-motion';
 import MapGL, { Marker, NavigationControl } from 'react-map-gl'; 
 import 'mapbox-gl/dist/mapbox-gl.css';
 
@@ -168,11 +168,17 @@ export default function App() {
   const [filterDate, setFilterDate] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [cinemaSearch, setCinemaSearch] = useState('');
   const [selectedMovie, setSelectedMovie] = useState(null);
   const [selectedCinema, setSelectedCinema] = useState(null);
   const [cinemaDate, setCinemaDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0]; // YYYY-MM-DD
+    // 注意：toISOString() 是 UTC 日期，可能导致本地已是 1/29 但返回 1/28。
+    // 这里用本地时间生成 YYYY-MM-DD，保证与用户看到的“今天”一致。
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
   });
   const [showWelcome, setShowWelcome] = useState(true);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -438,9 +444,15 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center space-x-4 bg-white border border-zinc-200 rounded-full px-5 md:px-6 py-2.5 md:py-3 shadow-sm w-full md:w-80 shrink-0">
-              <SearchIcon size={18} className={`text-zinc-400 ${searchTerm !== debouncedSearchTerm ? 'animate-pulse' : ''}`} />
-              <input type="text" placeholder="Search curated..." className="bg-transparent border-none outline-none text-sm font-bold w-full text-[#1A2F2B]" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-              {searchTerm !== debouncedSearchTerm && (
+              <SearchIcon size={18} className={`text-zinc-400 ${view === 'browse' && searchTerm !== debouncedSearchTerm ? 'animate-pulse' : ''}`} />
+              <input
+                type="text"
+                placeholder={view === 'cinemas' ? 'Search theaters…' : 'Search curated...'}
+                className="bg-transparent border-none outline-none text-sm font-bold w-full text-[#1A2F2B]"
+                value={view === 'cinemas' ? cinemaSearch : searchTerm}
+                onChange={(e) => (view === 'cinemas' ? setCinemaSearch(e.target.value) : setSearchTerm(e.target.value))}
+              />
+              {view === 'browse' && searchTerm !== debouncedSearchTerm && (
                 <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="w-4 h-4 border-2 border-[#C5A059] border-t-transparent rounded-full" />
               )}
             </div>
@@ -531,6 +543,8 @@ export default function App() {
                   cinemas={cinemasState}
                   loading={cinemasLoading}
                   error={cinemasError}
+                  cinemaSearch={cinemaSearch}
+                  setCinemaSearch={setCinemaSearch}
                 />
             ) : (
               <motion.div key="browse" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
@@ -602,23 +616,125 @@ export default function App() {
 }
 
 /* --- 模块：影院视图 (核心补全：手机端点击即自动拉起抽屉 + 从后端加载数据) --- */
-function CinemaView({ selectedCinema, onSelectCinema, cinemaDate, setCinemaDate, history, cinemas, loading, error }) {
+function CinemaView({ selectedCinema, onSelectCinema, cinemaDate, setCinemaDate, history, cinemas, loading, error, cinemaSearch, setCinemaSearch }) {
   const [viewport, setViewport] = useState({ latitude: 35.6895, longitude: 139.6917, zoom: 12, pitch: 45 });
   const [sheetState, setSheetState] = useState('peek');
   const isMobile = window.innerWidth < 768;
   const dragControls = useDragControls();
-
-  const sheetVariants = {
-    peek: { y: isMobile ? '75vh' : '0' },
-    full: { y: isMobile ? '10vh' : '0' }
+  const sheetDragZoneHeight = 220; // （已弃用）保留变量避免大改动
+  const sheetY = useMotionValue(0);
+  const sheetAnimRef = useRef(null);
+  const mapRef = useRef(null);
+  const getSheetPositions = () => {
+    const h = window.innerHeight || 800;
+    const sheetH = Math.round(h * 0.6); // 抽屉固定 60vh
+    const peekVisible = 140; // peek 状态露出的高度（px）
+    return {
+      // y 是 translateY：0 表示完整显示抽屉（高度 50vh）
+      full: 0,
+      // 往下推，让抽屉只露出一小条入口
+      peek: Math.max(0, sheetH - peekVisible),
+    };
   };
+  const [sheetPos, setSheetPos] = useState(() => getSheetPositions());
+
+  // 手机端：选中影院时，地图自动居中放大，并用 padding 把点“顶”到可视区域中心
+  useEffect(() => {
+    if (!isMobile) return;
+    if (!selectedCinema) return;
+    const h = window.innerHeight || 800;
+    const bottomPad = sheetState === 'full' ? Math.round(h * 0.6) : 160; // full=60vh 抽屉高度，peek=入口条高度
+    const map = mapRef.current;
+    const currentZoom =
+      (typeof map?.getZoom === 'function' ? map.getZoom() : null) ??
+      viewport.zoom ??
+      12;
+    const targetZoom = Math.max(currentZoom, 15.5);
+
+    // react-map-gl 的 ref 通常暴露 flyTo/getZoom；若不可用就退化成 setViewport
+    if (typeof map?.flyTo === 'function') {
+      map.flyTo({
+        center: [selectedCinema.lng, selectedCinema.lat],
+        zoom: targetZoom,
+        duration: 700,
+        essential: true,
+        padding: { top: 120, bottom: bottomPad + 24, left: 40, right: 40 },
+      });
+    } else {
+      setViewport(v => ({
+        ...v,
+        latitude: selectedCinema.lat,
+        longitude: selectedCinema.lng,
+        zoom: targetZoom,
+        transitionDuration: 700,
+      }));
+    }
+  }, [isMobile, selectedCinema, sheetState]);
+
+  const filteredCinemas = useMemo(() => {
+    const q = (cinemaSearch || '').trim().toLowerCase();
+    if (!q) return cinemas;
+    return (cinemas || []).filter(c => {
+      const name = (c?.name || '').toLowerCase();
+      const district = (c?.district || '').toLowerCase();
+      return name.includes(q) || district.includes(q);
+    });
+  }, [cinemas, cinemaSearch]);
+
+  useEffect(() => {
+    const onResize = () => setSheetPos(getSheetPositions());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile) {
+      sheetY.set(0);
+      return;
+    }
+    // 不管是否已选择影院，都允许抽屉在 peek/full 间切换
+    const target = sheetPos[sheetState];
+    sheetAnimRef.current?.stop?.();
+    const controls = animate(sheetY, target, { type: 'spring', damping: 40, stiffness: 700, mass: 0.6 });
+    sheetAnimRef.current = controls;
+    return () => controls.stop();
+  }, [isMobile, selectedCinema, sheetState, sheetPos, sheetY]);
 
   return (
     <div className="relative w-full h-full overflow-hidden flex flex-col md:flex-row bg-[#050816] md:bg-[#F5F5F2]">
       {/* 1. Map 容器：确保 100% 高度显示 */}
       <div className="absolute inset-0 md:relative md:flex-[1.5] bg-[#0a0a0b] md:rounded-[3.5rem] md:m-6 overflow-hidden border border-white/5 shadow-inner z-0">
-        <MapGL {...viewport} onMove={evt => setViewport(evt.viewState)} mapStyle="mapbox://styles/mapbox/navigation-night-v1" mapboxAccessToken={MAPBOX_TOKEN} antialias={true} style={{ width: '100%', height: '100%' }}>
-          {cinemas.map(c => (
+        {/* 影院搜索（手机端/桌面端都可用，覆盖在地图上方） */}
+        <div className="absolute top-4 left-4 right-4 md:top-6 md:left-6 md:right-6 z-[60]">
+          <div className="bg-zinc-900/70 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-2xl">
+            <SearchIcon size={18} className="text-zinc-200/80 shrink-0" />
+            <input
+              value={cinemaSearch}
+              onChange={(e) => {
+                const v = e.target.value;
+                setCinemaSearch(v);
+                // 手机端：开始搜索就自动展开，并切回“列表态”展示筛选结果
+                if (isMobile && v.trim()) {
+                  setSheetState('full');
+                  onSelectCinema(null);
+                }
+              }}
+              placeholder="搜索电影・电影院…"
+              className="bg-transparent border-none outline-none text-sm font-bold w-full text-white placeholder:text-zinc-200/50"
+            />
+            {cinemaSearch && (
+              <button
+                type="button"
+                onClick={() => setCinemaSearch('')}
+                className="text-[10px] font-black tracking-widest uppercase text-white/70 hover:text-white"
+              >
+                清除
+              </button>
+            )}
+          </div>
+        </div>
+        <MapGL ref={mapRef} {...viewport} onMove={evt => setViewport(evt.viewState)} mapStyle="mapbox://styles/mapbox/navigation-night-v1" mapboxAccessToken={MAPBOX_TOKEN} antialias={true} style={{ width: '100%', height: '100%' }}>
+          {filteredCinemas.map(c => (
             <Marker
               key={c.id}
               latitude={c.lat}
@@ -650,18 +766,25 @@ function CinemaView({ selectedCinema, onSelectCinema, cinemaDate, setCinemaDate,
 
       {/* 2. 详情抽屉 (Bottom Sheet) */}
       <motion.div 
-        drag={isMobile ? "y" : false}
-        dragControls={isMobile ? dragControls : undefined}
-        dragListener={false}
-        dragConstraints={{ top: 0, bottom: 800 }}
-        onDragEnd={(e, info) => { if (info.offset.y < -50) setSheetState('full'); if (info.offset.y > 50) setSheetState('peek'); }}
-        variants={sheetVariants} initial="peek" animate={selectedCinema ? (isMobile ? sheetState : 'peek') : 'peek'} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-        className={`fixed bottom-0 left-0 right-0 md:relative md:bottom-auto md:translate-y-0 md:w-[550px] bg-white rounded-t-[3rem] md:rounded-[3.5rem] shadow-2xl border border-zinc-100 z-[70] h-[95vh] md:h-full md:my-6 md:mr-6 flex flex-col transition-all duration-300`}
+        style={isMobile ? { y: sheetY } : undefined}
+        className={`fixed bottom-0 left-0 right-0 md:relative md:bottom-auto md:translate-y-0 md:w-[550px] bg-white rounded-t-[3rem] md:rounded-[3.5rem] shadow-2xl border border-zinc-100 z-[70] h-[60vh] md:h-full md:my-6 md:mr-6 flex flex-col transition-all duration-300 select-none`}
       >
-        <div
-          className="md:hidden w-12 h-1.5 bg-zinc-200 rounded-full mx-auto mt-4 mb-6 shrink-0 cursor-grab active:cursor-grabbing"
-          onPointerDown={(e) => dragControls.start(e)}
-        />
+        <button
+          type="button"
+          className="md:hidden w-full pt-4 pb-6 shrink-0 flex items-center justify-center cursor-pointer"
+          onClick={() => {
+            if (!isMobile) return;
+            setSheetState(prev => (prev === 'full' ? 'peek' : 'full'));
+          }}
+          aria-label="Toggle bottom sheet"
+        >
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-12 h-1.5 bg-zinc-200 rounded-full" />
+            <span className="text-[10px] font-black tracking-[0.35em] uppercase text-zinc-400">
+              {sheetState === 'full' ? '收起' : '展开'}
+            </span>
+          </div>
+        </button>
         <div className="flex-1 overflow-y-auto overscroll-contain no-scrollbar px-8 md:px-12 pb-48 pt-4">
           <AnimatePresence mode="wait">
             {selectedCinema ? (
@@ -689,7 +812,13 @@ function CinemaView({ selectedCinema, onSelectCinema, cinemaDate, setCinemaDate,
                             }
                           }
                         }}
-                        min={new Date().toISOString().split('T')[0]}
+                        min={(() => {
+                          const d = new Date();
+                          const yyyy = d.getFullYear();
+                          const mm = String(d.getMonth() + 1).padStart(2, '0');
+                          const dd = String(d.getDate()).padStart(2, '0');
+                          return `${yyyy}-${mm}-${dd}`;
+                        })()}
                         className="px-4 py-2 rounded-xl border border-zinc-200 text-sm font-black text-[#1A2F2B] bg-white focus:outline-none focus:ring-2 focus:ring-[#C5A059] focus:border-transparent"
                       />
                     </div>
@@ -716,7 +845,7 @@ function CinemaView({ selectedCinema, onSelectCinema, cinemaDate, setCinemaDate,
                 {loading && <p className="text-sm text-zinc-400">Loading cinemas…</p>}
                 {error && !loading && <p className="text-sm text-red-500">{error}</p>}
                 <div className="space-y-4">
-                  {cinemas.map(c => (
+                  {filteredCinemas.map(c => (
                     <div
                       key={c.id}
                       onClick={async () => {
