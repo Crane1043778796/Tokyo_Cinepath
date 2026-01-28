@@ -922,19 +922,26 @@ function MovieCard({ movie, tab, sortKey = 'imdb_rating', isFav, isWatched, onCl
           {isFav && <div className="p-2.5 rounded-full bg-[#1A2F2B] text-[#C5A059] shadow-xl border border-white/20"><Heart size={14} fill="currentColor" /></div>}
           {isWatched && <div className="p-2.5 rounded-full bg-[#10b981] text-white shadow-xl border border-white/20"><Eye size={14} fill="currentColor" /></div>}
         </div>
-        <div className="absolute top-5 right-5 bg-[#1A2F2B] text-white px-2.5 py-1.5 rounded-xl border border-white/10 shadow-2xl flex items-center gap-1">
-          <Star size={10} fill="#C5A059" className="text-[#C5A059]" />
-          <span className="text-[10px] font-black italic">
+        <div className="absolute top-2 right-2 sm:top-5 sm:right-5 bg-[#1A2F2B] text-white px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg sm:rounded-xl border border-white/10 shadow-2xl flex items-center gap-0.5 sm:gap-1 z-10">
+          <Star size={8} className="sm:w-[10px] sm:h-[10px] text-[#C5A059]" fill="#C5A059" />
+          <span className="text-[8px] sm:text-[10px] font-black italic">
             {displayScore > 0 ? displayScore.toFixed(1) : '--'}
           </span>
         </div>
         {tab === 'incoming' && (
-          <div className="absolute bottom-6 left-6 bg-white px-4 py-2 rounded-2xl shadow-xl border border-zinc-100 font-black text-[10px] uppercase tracking-tighter whitespace-nowrap">
+          <div className="absolute bottom-2 right-2 sm:bottom-6 sm:left-6 bg-white/95 backdrop-blur-sm px-2 py-1 sm:px-4 sm:py-2 rounded-lg sm:rounded-2xl shadow-xl border border-zinc-100 font-black text-[8px] sm:text-[10px] uppercase tracking-tighter whitespace-nowrap z-10">
             {(movie.earliest_schedule_date || movie.release_date || '').split('-').slice(1).join(' / ')}
           </div>
         )}
       </div>
-      <div className="px-1 font-sans"><h3 className="text-xl font-black tracking-tighter text-[#1A2F2B] mb-2 leading-none group-hover:text-zinc-500 transition-colors uppercase truncate">{movie.title_cn}</h3><p className="text-[10px] font-bold text-zinc-400 italic mb-4 truncate leading-none font-sans">Dir. {movie.director}</p><div className="flex items-center justify-between text-[9px] font-black text-zinc-300 uppercase tracking-widest pt-4 border-t border-zinc-100"><span>@ {cinemaLabel}</span><span>{movie.year}</span></div></div>
+      <div className="px-1 font-sans">
+        <h3 className="text-sm sm:text-xl font-black tracking-tighter text-[#1A2F2B] mb-1 sm:mb-2 leading-none group-hover:text-zinc-500 transition-colors uppercase truncate">{movie.title_cn}</h3>
+        <p className="text-[8px] sm:text-[10px] font-bold text-zinc-400 italic mb-2 sm:mb-4 truncate leading-none font-sans">Dir. {movie.director}</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0 text-[8px] sm:text-[9px] font-black text-zinc-300 uppercase tracking-widest pt-2 sm:pt-4 border-t border-zinc-100">
+          <span className="truncate">@ {cinemaLabel}</span>
+          {movie.year && <span className="text-zinc-400">{movie.year}</span>}
+        </div>
+      </div>
     </motion.div>
   );
 }
